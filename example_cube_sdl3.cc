@@ -1,8 +1,7 @@
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#endif
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_stdinc.h>
+#define SDL_MAIN_USE_CALLBACKS
+#include <SDL3/SDL_main.h>
 
 #include <vector>
 
@@ -72,19 +71,7 @@ Point screenShift{WIDTH / 2.0, HEIGHT / 2.0};
 Point screenShiftOpposite{-WIDTH / 2.0, -HEIGHT / 2.0};
 Matrix rotationXYZ = getRotationMatrix();
 
-void mainloop() {
-  SDL_Event event;
-
-  while (SDL_PollEvent(&event)) {
-    if (event.type == SDL_EVENT_QUIT) {
-      SDL_DestroyWindow(window);
-      SDL_Quit();
-#ifdef __EMSCRIPTEN__
-      emscripten_cancel_main_loop(); /* this should "kill" the app. */
-#endif
-    }
-  }
-
+SDL_AppResult SDL_AppIterate(void *appstate) {
   for (Point &p : points) {
     p = translate(screenShiftOpposite, p);
     p = transform(rotationXYZ, p);
@@ -101,32 +88,42 @@ void mainloop() {
   }
   SDL_RenderPresent(renderer);
   SDL_Delay(3);
+  return SDL_APP_CONTINUE;
 }
 
-int main() {
+SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
+  switch (event->type) {
+  case SDL_EVENT_QUIT:
+    return SDL_APP_SUCCESS;
+  default:
+    return SDL_APP_CONTINUE;
+  }
+}
+
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+  SDL_Log("AppInit");
   if (SDL_Init(SDL_INIT_VIDEO) == false) {
     SDL_Log("error initializing SDL: %s\n", SDL_GetError());
-    SDL_Quit();
+    return SDL_APP_FAILURE;
   }
-
-  if (SDL_CreateWindowAndRenderer("GAME", WIDTH, HEIGHT, 0, &window,
-                                  &renderer) == false) {
+  if (SDL_CreateWindowAndRenderer("GAME", WIDTH, HEIGHT,
+                                  SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE,
+                                  &window, &renderer) == false) {
     SDL_Log("error creating SDL window and renderer: %s\n", SDL_GetError());
-    SDL_Quit();
+    return SDL_APP_FAILURE;
   }
-  int scale = 200;
+  // https://wiki.libsdl.org/SDL3/README-emscripten#rendering
+  SDL_SetRenderVSync(renderer, 1);
 
+  int scale = 200;
   for (Point &p : points) {
     p.x = (scale * p.x + screenShift.x);
     p.y = (scale * p.y + screenShift.y);
     p.z = (scale * p.z + screenShift.z);
   }
+  return SDL_APP_CONTINUE;
+}
 
-#ifdef __EMSCRIPTEN__
-  emscripten_set_main_loop(mainloop, 0, 1);
-#else
-  while (1) {
-    mainloop();
-  }
-#endif
+void SDL_AppQuit(void *appstate, SDL_AppResult result) {
+  SDL_DestroyWindow(window);
 }
